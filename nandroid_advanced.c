@@ -25,6 +25,7 @@ void finish_nandroid_job() {
     ui_print("Finalizing, please wait...\n");
     sync();
 #ifdef PHILZ_TOUCH_RECOVERY
+    vibrate_device(1500);
     if (show_background_icon.value)
         ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     else
@@ -199,8 +200,7 @@ int check_backup_size(const char* backup_path) {
     unsigned long long data_backup_size = 0;
     unsigned long long data_used_bytes = 0;
     unsigned long long data_media_size = 0;
-    if (is_data_media() && (backup_data || backup_data_media))
-    {
+    if (is_data_media() && (backup_data || backup_data_media)) {
         if (0 == ensure_path_mounted("/data") && 0 == Get_Size_Via_statfs("/data")) {
             data_media_size = Get_Folder_Size("/data/media");
             data_used_bytes = Get_Folder_Size("/data");
@@ -262,21 +262,17 @@ void check_restore_size(const char* backup_file_image, const char* backup_path) 
 
     char tmp[PATH_MAX];
     char filename[PATH_MAX];
-    char *dir;
     char** files;
     int numFiles = 0;
 
-    strcpy(tmp, backup_file_image);
-    dir = dirname(tmp);
-    sprintf(tmp, "%s", dir);
-    strcat(tmp, "/");
+    sprintf(tmp, "%s/", DirName(backup_file_image));
     files = gather_files(tmp, "", &numFiles);
 
     if (strlen(backup_file_image) > strlen("win000") && strcmp(backup_file_image + strlen(backup_file_image) - strlen("win000"), "win000") == 0)
         snprintf(tmp, strlen(backup_file_image) - 3, "%s", backup_file_image);
     else
         strcpy(tmp, backup_file_image);
-    sprintf(filename, "%s", basename(tmp));
+    sprintf(filename, "%s", BaseName(tmp));
     
     int i;
     unsigned long fsize;
@@ -373,11 +369,11 @@ int dd_raw_restore_handler(const char* backup_file_image, const char* root) {
 
     // make sure we  have a valid image file name
     int i = 0;
-    const char *raw_image_format[] = { ".img", ".bin", NULL };
-    char* filename;
     char tmp[PATH_MAX];
-    sprintf(tmp, "%s", backup_file_image);
-    filename = basename(tmp);
+    char filename[PATH_MAX];
+    const char *raw_image_format[] = { ".img", ".bin", NULL };
+
+    sprintf(filename, "%s", BaseName(backup_file_image));
     while (raw_image_format[i] != NULL) {
         if (strlen(filename) > strlen(raw_image_format[i]) &&
                     strcmp(filename + strlen(filename) - strlen(raw_image_format[i]), raw_image_format[i]) == 0 &&
@@ -423,9 +419,7 @@ int dd_raw_restore_handler(const char* backup_file_image, const char* root) {
         LOGE("failed raw restore of %s to %s\n", filename, root);
     //log
     finish_nandroid_job();
-    sprintf(tmp, "%s", backup_file_image);
-    char *logfile = dirname(tmp);
-    sprintf(tmp, "%s/log.txt", logfile);
+    sprintf(tmp, "%s/log.txt", DirName(backup_file_image));
     ui_print_custom_logtail(tmp, 3);
     return ret;
 }
@@ -599,10 +593,8 @@ int twrp_backup_wrapper(const char* backup_path, const char* backup_file_image, 
         return -1;
     }
 
-    struct stat st;
-    if (0 != stat("/tmp/list/filelist000", &st)) {
-        sprintf(tmp, "%s", backup_path);
-        ui_print("Nothing to backup. Skipping %s\n", basename(tmp));
+    if (!file_found("/tmp/list/filelist000")) {
+        ui_print("Nothing to backup. Skipping %s\n", BaseName(backup_path));
         return 0;
     }
 
@@ -615,10 +607,17 @@ int twrp_backup_wrapper(const char* backup_path, const char* backup_file_image, 
     {
         compute_twrp_backup_stats(index);
         if (nandroid_get_default_backup_format() == NANDROID_BACKUP_FORMAT_TAR)
+#ifdef BOARD_RECOVERY_USE_BBTAR
             sprintf(tmp, "(tar -cvf '%s%03i' -T /tmp/list/filelist%03i) 2> /proc/self/fd/1 ; exit $?", backup_file_image, index, index);
+#else
+            sprintf(tmp, "(tar -cvsf '%s%03i' -T /tmp/list/filelist%03i) 2> /proc/self/fd/1 ; exit $?", backup_file_image, index, index);
+#endif
         else
-            sprintf(tmp, "(tar -cv -T /tmp/list/filelist%03i | pigz -c -%d >'%s%03i') 2> /proc/self/fd/1 ; exit $?", index, compression_value.value, backup_file_image, index);
-
+#ifdef BOARD_RECOVERY_USE_BBTAR
+            sprintf(tmp, "set -o pipefail ; (tar -cv -T /tmp/list/filelist%03i | pigz -c -%d >'%s%03i') 2> /proc/self/fd/1 ; exit $?", index, compression_value.value, backup_file_image, index);
+#else
+            sprintf(tmp, "(set -o pipefail ; tar -cvs -T /tmp/list/filelist%03i | pigz -c -%d >'%s%03i') 2> /proc/self/fd/1 ; exit $?", index, compression_value.value, backup_file_image, index);
+#endif
         ui_print("  * Backing up archive %i/%i\n", (index + 1), backup_count);
         FILE *fp = __popen(tmp, "r");
         if (fp == NULL) {
@@ -824,17 +823,26 @@ int twrp_tar_extract_wrapper(const char* popen_command, const char* backup_path,
 }
 
 int twrp_restore_wrapper(const char* backup_file_image, const char* backup_path, int callback) {
-    char tmp[PATH_MAX];
+    char path[PATH_MAX];
     char cmd[PATH_MAX];
-    char tar_args[6];
+    char tar_args[10];
     int ret;
+
     // tar vs tar.gz format?
     if ((ret = is_gzip_file(backup_file_image)) < 0)
         return ret;
     if (ret == 0)
+#ifdef BOARD_RECOVERY_USE_BBTAR
         sprintf(tar_args, "-xvf");
+#else
+        sprintf(tar_args, "-xvsf");
+#endif
     else
+#ifdef BOARD_RECOVERY_USE_BBTAR
         sprintf(tar_args, "-xzvf");
+#else
+        sprintf(tar_args, "-xzvsf");
+#endif
 
     check_restore_size(backup_file_image, backup_path);
     if (strlen(backup_file_image) > strlen("win000") && strcmp(backup_file_image + strlen(backup_file_image) - strlen("win000"), "win000") == 0) {
@@ -842,21 +850,21 @@ int twrp_restore_wrapper(const char* backup_file_image, const char* backup_path,
         char main_filename[PATH_MAX];
         memset(main_filename, 0, sizeof(main_filename));
         strncpy(main_filename, backup_file_image, strlen(backup_file_image) - strlen("000"));
+
         int index = 0;
-        sprintf(tmp, "%s%03i", main_filename, index);
-        while(file_found(tmp)) {
+        sprintf(path, "%s%03i", main_filename, index);
+        while(file_found(path)) {
             ui_print("  * Restoring archive %d\n", index + 1);
-            sprintf(cmd, "cd /; tar %s '%s'; exit $?", tar_args, tmp);
+            sprintf(cmd, "cd /; tar %s '%s'; exit $?", tar_args, path);
             if (0 != (ret = twrp_tar_extract_wrapper(cmd, backup_path, callback)))
                 return ret;
             index++;
-            sprintf(tmp, "%s%03i", main_filename, index);
+            sprintf(path, "%s%03i", main_filename, index);
         }
     } else {
         //single volume archive
         sprintf(cmd, "cd %s; tar %s '%s'; exit $?", backup_path, tar_args, backup_file_image);
-        sprintf(tmp, "%s", backup_file_image);
-        ui_print("Restoring archive %s\n", basename(tmp));
+        ui_print("Restoring archive %s\n", BaseName(backup_file_image));
         ret = twrp_tar_extract_wrapper(cmd, backup_path, callback);
     }
     return ret;
@@ -995,14 +1003,22 @@ int nandroid_backup_datamedia(const char* backup_path) {
     int fmt;
     fmt = nandroid_get_default_backup_format();
     if (fmt == NANDROID_BACKUP_FORMAT_TAR) {
-        sprintf(tmp, "cd / ; touch %s.tar ; (tar cv data/media | split -a 1 -b 1000000000 /proc/self/fd/0 %s.tar.) 2> /proc/self/fd/1 ; exit $?",
+#ifdef BOARD_RECOVERY_USE_BBTAR
+        sprintf(tmp, "cd / ; touch %s.tar ; set -o pipefail ; (tar cv data/media | split -a 1 -b 1000000000 /proc/self/fd/0 %s.tar.) 2> /proc/self/fd/1 ; exit $?",
                 backup_file_image, backup_file_image);
-    }
-    else if (fmt == NANDROID_BACKUP_FORMAT_TGZ) {
-        sprintf(tmp, "cd / ; touch %s.tar.gz ; (tar cv data/media | pigz -c -%d | split -a 1 -b 1000000000 /proc/self/fd/0 %s.tar.gz.) 2> /proc/self/fd/1 ; exit $?",
+#else
+        sprintf(tmp, "cd / ; touch %s.tar ; set -o pipefail ; (tar -csv data/media | split -a 1 -b 1000000000 /proc/self/fd/0 %s.tar.) 2> /proc/self/fd/1 ; exit $?",
+                backup_file_image, backup_file_image);
+#endif
+    } else if (fmt == NANDROID_BACKUP_FORMAT_TGZ) {
+#ifdef BOARD_RECOVERY_USE_BBTAR
+        sprintf(tmp, "cd / ; touch %s.tar.gz ; set -o pipefail ; (tar cv data/media | pigz -c -%d | split -a 1 -b 1000000000 /proc/self/fd/0 %s.tar.gz.) 2> /proc/self/fd/1 ; exit $?",
                 backup_file_image, compression_value.value, backup_file_image);
-    }
-    else {
+#else
+        sprintf(tmp, "cd / ; touch %s.tar.gz ; set -o pipefail ; (tar -csv data/media | pigz -c -%d | split -a 1 -b 1000000000 /proc/self/fd/0 %s.tar.gz.) 2> /proc/self/fd/1 ; exit $?",
+                backup_file_image, compression_value.value, backup_file_image);
+#endif
+    } else {
         // non fatal failure
         LOGE("  - backup format must be tar(.gz), skipping...\n");
         return 0;
@@ -1047,13 +1063,21 @@ int nandroid_restore_datamedia(const char* backup_path) {
         sprintf(backup_file_image, "%s/datamedia.%s.tar", backup_path, filesystem);
         if (0 == stat(backup_file_image, &s)) {
             restore_handler = tar_extract_wrapper;
-            sprintf(tmp, "cd / ; cat %s* | tar xv ; exit $?", backup_file_image);
+#ifdef BOARD_RECOVERY_USE_BBTAR
+            sprintf(tmp, "cd / ; set -o pipefail ; cat %s* | tar xv ; exit $?", backup_file_image);
+#else
+            sprintf(tmp, "cd / ; set -o pipefail ; cat %s* | tar -xsv ; exit $?", backup_file_image);
+#endif
             break;
         }
         sprintf(backup_file_image, "%s/datamedia.%s.tar.gz", backup_path, filesystem);
         if (0 == stat(backup_file_image, &s)) {
             restore_handler = tar_gzip_extract_wrapper;
-            sprintf(tmp, "cd / ; cat %s* | pigz -d -c | tar xv ; exit $?", backup_file_image);
+#ifdef BOARD_RECOVERY_USE_BBTAR
+            sprintf(tmp, "cd / ; set -o pipefail ; cat %s* | pigz -d -c | tar xv ; exit $?", backup_file_image);
+#else
+            sprintf(tmp, "cd / ; set -o pipefail ; cat %s* | pigz -d -c | tar -xsv ; exit $?", backup_file_image);
+#endif
             break;
         }
         i++;
@@ -1074,5 +1098,128 @@ int nandroid_restore_datamedia(const char* backup_path) {
         return print_and_error("Failed to restore /data/media!\n");
 
     ui_print("Restore of /data/media completed.\n");
+    return 0;
+}
+
+int gen_nandroid_md5sum(const char* backup_path) {
+    char md5file[PATH_MAX];
+    int ret = -1;
+    int numFiles = 0;
+
+    ui_print("\n>> Generating md5 sum...\n");
+    ensure_path_mounted(backup_path);
+    ui_reset_progress();
+    ui_show_progress(1, 0);
+
+    // this will exclude subfolders!
+    char** files = gather_files(backup_path, "", &numFiles);
+    if (numFiles == 0) {
+        LOGE("No files found in backup path %s\n", backup_path);
+        goto out;
+    }
+
+    // create empty md5file, overwrite existing one if we're regenerating the md5 for the backup
+    sprintf(md5file, "%s/nandroid.md5", backup_path);
+    write_string_to_file(md5file, "");
+
+    int i = 0;
+    for(i = 0; i < numFiles; i++) {
+        // exclude md5 and log files
+        if (strcmp(BaseName(files[i]), "nandroid.md5") == 0 || strcmp(BaseName(files[i]), "recovery.log") == 0)
+            continue;
+        ui_print("  > %s\n", BaseName(files[i]));
+        if (write_md5digest(files[i], md5file, 1) < 0)
+            goto out;
+    }
+
+    ret = 0;
+
+out:
+    ui_reset_progress();
+    free_string_array(files);
+    if (ret != 0)
+        LOGE("Error while generating md5 sum!\n");
+
+    return ret;
+}
+
+int verify_nandroid_md5sum(const char* backup_path) {
+    char* backupfile;
+    char line[PATH_MAX];
+    char md5file[PATH_MAX];
+
+    ui_print("\n>> Checking MD5 sums...\n");
+    ensure_path_mounted(backup_path);
+    sprintf(md5file, "%s/nandroid.md5", backup_path);
+    FILE *fp = fopen(md5file, "r");
+    if (fp == NULL) {
+        LOGE("cannot open md5file\n");
+        return -1;
+    }
+
+    // unlike original cwm, an empty md5 file will fail check
+    // also, if a file doesn't have and md5sum entry, it will fail
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        backupfile = strstr(line, "  ");
+        // skip empty new lines, but non other bad formatted lines
+        if (backupfile == NULL && strcmp(line, "\n") != 0) {
+            fclose(fp);
+            return -1;
+        }
+
+        // mis-formatted line (backupfile must be at least one char as it includes the two spaces)
+        if (strlen(backupfile) < 3 || strcmp(backupfile, "  \n") == 0) {
+            fclose(fp);
+            return -1;
+        }
+
+        // save the line before we modify it
+        char *md5sum = strdup(line);
+        if (md5sum == NULL) {
+            LOGE("memory error\n");
+            fclose(fp);
+            return -1;
+        }
+
+        // remove leading two spaces and end new line
+        backupfile += 2; // 2 == strlen("  ")
+        if (strcmp(backupfile + strlen(backupfile) - 1, "\n") == 0)
+            backupfile[strlen(backupfile) - 1] = '\0';
+
+        // create a temporary md5file for each backup file
+        sprintf(md5file, "/tmp/%s.md5", backupfile);
+        write_string_to_file(md5file, md5sum);
+        free(md5sum);
+    }
+
+    fclose(fp);
+
+    // verify backup integrity for each backupfile to the md5sum we saved in temporary md5file
+    int i = 0;
+    int numFiles = 0;
+    char** files = gather_files(backup_path, "", &numFiles);
+    if (numFiles == 0) {
+        free_string_array(files);
+        return -1;
+    }
+
+    ui_reset_progress();
+    ui_show_progress(1, 0);
+    for(i = 0; i < numFiles; i++) {
+        // exclude md5 and log files
+        if (strcmp(BaseName(files[i]), "nandroid.md5") == 0 || strcmp(BaseName(files[i]), "recovery.log") == 0)
+            continue;
+        sprintf(md5file, "/tmp/%s.md5", BaseName(files[i]));
+        ui_print("  > %s\n", BaseName(files[i]));
+        if (verify_md5digest(files[i], md5file) != 0) {
+            free_string_array(files);
+            ui_reset_progress();
+            return -1;
+        }
+        delete_a_file(md5file);
+    }
+
+    ui_reset_progress();
+    free_string_array(files);
     return 0;
 }

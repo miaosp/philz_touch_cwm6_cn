@@ -42,6 +42,7 @@ int ors_backup_command(const char* backup_path, const char* options);
 unsigned long long gettime_nsec();
 long long timenow_usec(void);
 long long timenow_msec(void);
+int is_time_interval_passed(long long msec_interval);
 char* readlink_device_blk(const char* Path);
 unsigned long Get_File_Size(const char* Path);
 unsigned long long Get_Folder_Size(const char* Path);
@@ -51,6 +52,23 @@ void delete_a_file(const char* filename);
 void ensure_directory(const char* dir); // in nandroid.c
 int is_path_ramdisk(const char* path);
 int copy_a_file(const char* file_in, const char* file_out);
+int append_string_to_file(const char* filename, const char* string);
+char* read_file_to_buffer(const char* filepath, unsigned long *len);
+char* BaseName(const char* path);
+char* DirName(const char* path);
+
+// case insensitive C-string compare (adapted from titanic-fanatic)
+int strcmpi(const char *str1, const char *str2);
+
+// calculate md5sum when installing zip files from menu
+void start_md5_display_thread(char* filepath);
+void stop_md5_display_thread();
+void start_md5_verify_thread(char* filepath);
+void stop_md5_verify_thread();
+
+// md5sum calculate / display / write / check
+int write_md5digest(const char* filepath, const char* md5file, int append);
+int verify_md5digest(const char* filepath, const char* md5file);
 
 // custom zip path + free browse mode
 void set_ensure_mount_always_true(int state);

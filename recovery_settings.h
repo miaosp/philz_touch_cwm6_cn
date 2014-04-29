@@ -16,8 +16,10 @@
 
 // nandroid settings
 #define NANDROID_HIDE_PROGRESS_FILE  "clockworkmod/.hidenandroidprogress"
-#define NANDROID_IGNORE_SELINUX_FILE "clockworkmod/.ignore_nandroid_secontext"
 #define NANDROID_BACKUP_FORMAT_FILE  "clockworkmod/.default_backup_format"
+#ifdef BOARD_RECOVERY_USE_BBTAR
+#define NANDROID_IGNORE_SELINUX_FILE "clockworkmod/.ignore_nandroid_secontext"
+#endif
 
 #define EFS_BACKUP_PATH     "clockworkmod/backup/.efs_backup"
 #define MODEM_BIN_PATH      "clockworkmod/backup/.modem_bin"
@@ -66,6 +68,7 @@ struct CWMSettingsIntValues show_nandroid_size_progress;
 struct CWMSettingsIntValues use_nandroid_simple_logging;
 struct CWMSettingsIntValues nand_prompt_on_low_space;
 struct CWMSettingsIntValues signature_check_enabled;
+struct CWMSettingsIntValues install_zip_verify_md5;
 
 struct CWMSettingsIntValues boardEnableKeyRepeat;
 
@@ -138,3 +141,4 @@ struct CompilerFlagsUI {
 struct CompilerFlagsUI libtouch_flags;
 
 #endif // _RECOVERY_SETTINGS_H
+
