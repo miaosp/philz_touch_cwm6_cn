@@ -764,6 +764,13 @@ else ifeq ($(TARGET_PRODUCT), cm_nex)
     TARGET_SCREEN_WIDTH := 480
     BRIGHTNESS_SYS_FILE := "/sys/class/leds/lcd-backlight/brightness"
 
+#xiaomi (mione_plus)
+else ifeq ($(TARGET_PRODUCT), cm_mione_plus)
+    TARGET_COMMON_NAME := xiaomi (mione_plus)
+    TARGET_SCREEN_HEIGHT := 800
+    TARGET_SCREEN_WIDTH := 480
+    BRIGHTNESS_SYS_FILE := "/sys/class/leds/lcd-backlight/brightness"
+
 endif
 #---- end device specific config
 
