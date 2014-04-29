@@ -775,7 +775,8 @@ endif
 #---- end device specific config
 
 # temporary workaround to backup/restore selinux context, thanks to @xiaolu
-RECOVERY_NEED_SELINUX_FIX := true
+#we don't add selinux now
+#RECOVERY_NEED_SELINUX_FIX := true
 
 # The below flags must always be defined as default in BoardConfig.mk, unless defined above:
 # device name to display in About dialog
